@@ -17,7 +17,7 @@ static const rect_t rect = {
     .x	  = 0,
     .y	  = 0,
     .width  = 320,
-    .height = 230,
+    .height = 240,
 };
 static Parameter parameters = {
     .gpio = gpio,
@@ -138,17 +138,15 @@ ILI9341::ILI9341() : LCDBase(&parameters) {
 // y:Y coordinate
 // size:Number of colors
 // colors:colors
-void ILI9341::drawPixels(uint16_t *pixels) {
+void ILI9341::drawPixelsInitialize() {
+    ESP_LOGI(TAG, "drawPixelsInitialize");
 	size_t dataLengthArray[] = {
 	    1, 4, 1, 4, 1, 0};
 	uint8_t data[] = {
-	    0x2a, 0x00, 0x00, width >> 8, width & 0xff,
-	    0x2b, 0x00, 0x00, height >> 8, height & 0xff,
+	    0x2a, 0x00, 0x00, (uint8_t)(width >> 8), (uint8_t)width,
+	    0x2b, 0x00, 0x00, (uint8_t)(height >> 8), (uint8_t)height,
 	    0x2c};
 	this->spi_write_bytes(dataLengthArray, data);
-	size_t dataLengthArray2[] = {
-	    0, width * height * sizeof(uint16_t), 0};
-	this->spi_write_bytes(dataLengthArray2, (const uint8_t *)pixels);
 }
 
 /*

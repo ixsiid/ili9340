@@ -1,67 +1,25 @@
 #pragma once
 
-#include <driver/gpio.h>
 #include <driver/spi_master.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include "types.hpp"
+#include "font.hpp"
+
 namespace LCD {
-enum Color : uint16_t {
-	RED	  = 0xf800,
-	GREEN  = 0x07e0,
-	BLUE	  = 0x001f,
-	BLACK  = 0x0000,
-	WHITE  = 0xffff,
-	GRAY	  = 0x8c51,
-	YELLOW = 0xFFE0,
-	CYAN	  = 0x07FF,
-	PURPLE = 0xF81F,
-};
-
-enum Direction {
-	Direction__0,
-	Direction_90,
-	Direction180,
-	Direction270,
-};
-
-enum Model {
-	Model9340,
-	Model9341,
-	Model7735,
-	Model9225,
-	Model9226,
-};
-
-typedef struct {
-	gpio_num_t cs;
-	gpio_num_t dc;
-	gpio_num_t reset;
-	gpio_num_t backlight;
-	gpio_num_t mosi;
-	gpio_num_t sclk;
-} gpio_t;
-
-typedef struct {
-	int x;
-	int y;
-	int width;
-	int height;
-} rect_t;
-
-typedef struct {
-	gpio_t gpio;
-	rect_t rect;
-} Parameter;
 
 class LCDBase {
     public:
+	virtual ~LCDBase();
 	void clear(uint16_t color = BLACK);
-	void swap(bool copy = false);
+	void swap();
 
-	uint16_t rgb565_conv(uint16_t r, uint16_t g, uint16_t b);
+	static uint16_t rgb565_conv(uint8_t r, uint8_t g, uint8_t b);
 
 	void setBacklight(bool on = true);
+
+	void drawString(uint16_t x, uint16_t y, uint16_t color, const char * text, Font::FontBase * font = defaultFont);
 
     protected:
 	LCDBase(Parameter *params);
@@ -69,7 +27,10 @@ class LCDBase {
 	void delayMS(int ms);
 
     private:
-	virtual void drawPixels(uint16_t *pixels) = 0;
+	virtual void drawPixelsInitialize() = 0;
+	void spi_write_large_data(size_t length, const uint8_t *data);
+
+	static Font::FontBase * defaultFont;
 
 	uint16_t *fore;
 	uint16_t *back;
@@ -82,7 +43,7 @@ class LCDBase {
 	rect_t rect;
 };
 
-inline void LCD::delayMS(int ms) {
+inline void LCDBase::delayMS(int ms) {
 	vTaskDelay((ms + (portTICK_PERIOD_MS - 1)) / portTICK_PERIOD_MS);
 }
 

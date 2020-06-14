@@ -13,12 +13,12 @@ use gpio
 */
 
 namespace LCD {
-class ILI9341 : LCDBase {
+class ILI9341 : public LCDBase {
     public:
 	ILI9341();
 
     private:
-	void drawPixels(uint16_t *pixels) override;
+	void drawPixelsInitialize() override;
 
 	uint16_t width;
 	uint16_t height;

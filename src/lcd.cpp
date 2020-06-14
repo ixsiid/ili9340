@@ -3,13 +3,12 @@
 #include <math.h>
 #include <string.h>
 
+#include "shnm8x16r.hpp"
+
 #define TAG "LCD"
 #include <esp_log.h>
 
 using namespace LCD;
-
-static const int GPIO_MOSI = 23;
-static const int GPIO_SCLK = 18;
 
 static const int SPI_Command_Mode = 0;
 static const int SPI_Data_Mode    = 1;
@@ -18,29 +17,31 @@ static const int SPI_Data_Mode    = 1;
 static const int SPI_Frequency = SPI_MASTER_FREQ_40M;
 ////static const int SPI_Frequency = SPI_MASTER_FREQ_80M;
 
+Font::FontBase *LCDBase::defaultFont = nullptr;
+
 LCDBase::LCDBase(Parameter *params) {
+	if (!defaultFont) LCDBase::defaultFont = new Font::shnm8x16r();
+
 	esp_err_t ret;
 
-	this->gpio  = params->gpio;
-	this->rect  = params->rect;
+	this->gpio = params->gpio;
+	this->rect = params->rect;
 
 	this->pixelCount = rect.width * rect.height;
-	this->size = pixelCount * sizeof(uint16_t);
+	this->size	  = pixelCount * sizeof(uint16_t);
 
 	fore = (uint16_t *)malloc(size);
 	back = (uint16_t *)malloc(size);
+	ESP_LOGI(TAG, "fore: %p, back: %p", fore, back);
 
-	ESP_LOGI(TAG, "GPIO_CS=%d", gpio.cs);
 	gpio_pad_select_gpio(gpio.cs);
 	gpio_set_direction(gpio.cs, GPIO_MODE_OUTPUT);
 	gpio_set_level(gpio.cs, 0);
 
-	ESP_LOGI(TAG, "GPIO_DC=%d", gpio.dc);
 	gpio_pad_select_gpio(gpio.dc);
 	gpio_set_direction(gpio.dc, GPIO_MODE_OUTPUT);
 	gpio_set_level(gpio.dc, 0);
 
-	ESP_LOGI(TAG, "gpio.reset=%d", gpio.reset);
 	if (gpio.reset >= 0) {
 		gpio_pad_select_gpio(gpio.reset);
 		gpio_set_direction(gpio.reset, GPIO_MODE_OUTPUT);
@@ -49,7 +50,6 @@ LCDBase::LCDBase(Parameter *params) {
 		gpio_set_level(gpio.reset, 1);
 	}
 
-	ESP_LOGI(TAG, "gpio.backlight=%d", gpio.backlight);
 	if (gpio.backlight >= 0) {
 		gpio_pad_select_gpio(gpio.backlight);
 		gpio_set_direction(gpio.backlight, GPIO_MODE_OUTPUT);
@@ -87,34 +87,68 @@ LCDBase::~LCDBase() {
 }
 
 void LCDBase::clear(uint16_t color) {
-	for(int i=0; i<pixelCount; i++) back[i] = color;
+	for (int i = 0; i < pixelCount; i++) {
+		fore[i] = color;
+	}
 }
 
-void LCDBase::swap(bool copy){
-	uint16_t * current = fore;
+void LCDBase::swap() {
+	drawPixelsInitialize();
+	spi_write_large_data(size, (const uint8_t *)fore);
+}
 
-	fore = back;
-	back = current;
-	drawPixels(fore);
-	if (copy) memcpy(back, fore, size);
+uint16_t LCDBase::rgb565_conv(uint8_t r, uint8_t g, uint8_t b) {
+	uint16_t rgb = g;
+	rgb <<= 3;
+	rgb &= 0b0000000011100000;
+	rgb |= (b >> 3);
+	rgb <<= 5;
+	rgb |= (r >> 3);
+	rgb <<= 3;
+	rgb |= (g >> 5);
+	return rgb;
 }
 
 void LCDBase::spi_write_bytes(const size_t *dataLengthArray, const uint8_t *data) {
 	spi_transaction_t transaction;
-	esp_err_t ret;
 	int mode = SPI_Command_Mode;	//
 
 	memset(&transaction, 0, sizeof(spi_transaction_t));
 
 	do {
-		transaction.length	  = *dataLengthArray;
+		gpio_set_level(gpio.dc, mode);
+
+		transaction.length	  = *dataLengthArray * 8;
 		transaction.tx_buffer = data;
 
-		ret = spi_device_transmit(this->spi, &transaction);
-		// assert(ret == ESP_OK);
+		spi_device_transmit(this->spi, &transaction);
 
 		data += *dataLengthArray;
 		dataLengthArray++;
-		mode = 1 - mode; // Flip [SPI_Command_Mode] <-> [SPI_Data_Mode]
+		mode = 1 - mode;  // Flip [SPI_Command_Mode : 0] <-> [SPI_Data_Mode : 1]
 	} while (*dataLengthArray > 0);
+}
+
+void LCDBase::spi_write_large_data(size_t length, const uint8_t *data) {
+	spi_transaction_t transaction;
+
+	memset(&transaction, 0, sizeof(spi_transaction_t));
+
+	gpio_set_level(gpio.dc, SPI_Data_Mode);
+
+	const size_t max = 256;
+	while (length > 0) {
+		size_t p			  = (length > max ? max : length);
+		transaction.tx_buffer = data;
+		transaction.length	  = p * 8;
+
+		spi_device_transmit(spi, &transaction);
+
+		data += p;
+		length -= p;
+	}
+}
+
+void LCDBase::drawString(uint16_t x, uint16_t y, uint16_t color, const char *text, Font::FontBase *font) {
+	font->drawString(&rect, x, y, color, fore, text);
 }
