@@ -17,11 +17,23 @@ class ILI9341 : public LCDBase {
     public:
 	ILI9341();
 
+	void sleep() override;
+	void wakeup(bool update) override;
+
+	void hidden() override;
+	void visible() override;
+
+	void deepSleep() override;
+	void recovery() override;
+
     private:
-	void drawPixelsInitialize() override;
+	void drawPixelsInitialize(uint16_t y, uint16_t height) override;
+	void writeInitialRegister();
 
 	uint16_t width;
 	uint16_t height;
+
+	bool deepsleeping;
 };
 
 }  // namespace LCD

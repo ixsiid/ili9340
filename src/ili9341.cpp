@@ -25,12 +25,19 @@ static Parameter parameters = {
 };
 
 ILI9341::ILI9341() : LCDBase(&parameters) {
-    width = parameters.rect.width;
-    height = parameters.rect.height;
+	deepsleeping = false;
 
+	width  = parameters.rect.width;
+	height = parameters.rect.height;
+
+	writeInitialRegister();
+
+	setBacklight();
+}
+
+void ILI9341::writeInitialRegister() {
 	ESP_LOGI(TAG, "Initialize ILI9341 driver TFT Display");
 	ESP_LOGI(TAG, "Screen width: %d, height: %d", width, height);
-
 
 	size_t dataLengthArray[] = {
 	    1, 1, 1, 1, 1, 2, 1, 1,  //
@@ -50,8 +57,6 @@ ILI9341::ILI9341() : LCDBase(&parameters) {
 	spi_write_bytes(dataLengthArray, data);
 	delayMS(120);
 	spi_write_bytes(&dataLengthArray[24], &data[57]);
-
-	setBacklight();
 }
 
 /* case Model9225: 
@@ -132,51 +137,75 @@ ILI9341::ILI9341() : LCDBase(&parameters) {
     spi_write_bytes(&dataLengthArray[73], &data[105]);
 */
 
-// Add 202001
-// Draw multi pixel
-// x:X coordinate
-// y:Y coordinate
-// size:Number of colors
-// colors:colors
-void ILI9341::drawPixelsInitialize() {
-    ESP_LOGI(TAG, "drawPixelsInitialize");
+void ILI9341::drawPixelsInitialize(uint16_t y, uint16_t height) {
+	uint16_t w = width - 1;
+	uint16_t h = y + height - 1;
+
 	size_t dataLengthArray[] = {
 	    1, 4, 1, 4, 1, 0};
 	uint8_t data[] = {
-	    0x2a, 0x00, 0x00, (uint8_t)(width >> 8), (uint8_t)width,
-	    0x2b, 0x00, 0x00, (uint8_t)(height >> 8), (uint8_t)height,
+	    0x2a, 0x00, 0x00, (uint8_t)(w >> 8), (uint8_t)w,
+	    0x2b, (uint8_t)(y >> 8), (uint8_t)y, (uint8_t)(h >> 8), (uint8_t)h,
 	    0x2c};
 	this->spi_write_bytes(dataLengthArray, data);
 }
 
+void ILI9341::sleep() {
+	uint8_t d[] = {0x10};
+	spi_write_command(1, d);
+	setBacklight(false);
+	delayMS(5);
+}
+
+void ILI9341::wakeup(bool update) {
+	uint8_t d[] = {0x11};
+	spi_write_command(1, d);
+	delayMS(5);
+	if (update) this->update();
+	setBacklight(true);
+}
+
+void ILI9341::hidden() {
+	setBacklight(false);
+	uint8_t d[] = {0x28};
+	spi_write_command(1, d);
+}
+
+void ILI9341::visible() {
+	uint8_t d[] = {0x29};
+	spi_write_command(1, d);
+	setBacklight(true);
+}
+
+// 機能していない。ただのhiddenになってる。
+void ILI9341::deepSleep() {
+	hidden();
+	size_t l[]  = {1, 1, 0};
+	uint8_t d[] = {0xb7, 0b00001000};
+	spi_write_bytes(l, d);
+
+	deepsleeping = true;
+}
+
+// 機能していない。ただのvisibleになってる。
+void ILI9341::recovery() {
+	if (!deepsleeping) return;
+
+	for (int i = 0; i < 6; i++) {
+		gpio_set_level(::gpio.cs, 1);
+		delayMS(1);
+		gpio_set_level(::gpio.cs, 0);
+		delayMS(1);
+	}
+
+	delayMS(50);
+	writeInitialRegister();
+
+	update();
+	visible();
+}
+
 /*
-
-// Display OFF
-void LCD::lcdDisplayOff(TFT_t *dev) {
-	spi_master_write_comm_byte(0x28);
-}
-
-// Display ON
-void LCD::lcdDisplayOn(TFT_t *dev) {
-	spi_master_write_comm_byte(0x29);
-}
-
-// Display Inversion OFF
-void LCD::lcdInversionOff(TFT_t *dev) {
-	spi_master_write_comm_byte(0x20);
-}
-
-// Display Inversion ON
-void LCD::lcdInversionOn(TFT_t *dev) {
-	spi_master_write_comm_byte(0x21);
-}
-
-// Change Memory Access Control
-void LCD::lcdBGRFilter(TFT_t *dev) {
-	spi_master_write_comm_byte(0x36);	//Memory Access Control
-	spi_master_write_data_byte(0x00);	//Right top start, RGB color filter panel
-}
-
 // Vertical Scrolling Definition
 // tfa:Top Fixed Area
 // vsa:Vertical Scrolling Area

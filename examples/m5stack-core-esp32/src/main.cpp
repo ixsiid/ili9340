@@ -4,6 +4,8 @@
 
 #include <ili9341.hpp>
 
+#include <button.hpp>
+
 #define TAG "LCD test"
 #include "log.h"
 
@@ -13,33 +15,58 @@ void app_main();
 
 using namespace LCD;
 
+
 void app_main() {
 	_i("Start");
 	ILI9341 *lcd = new ILI9341();
 
 	xTaskCreatePinnedToCore([](void *lcd_p) {
-		ILI9341 *lcd	   = (ILI9341 *)lcd_p;
+		ILI9341 *lcd = (ILI9341 *)lcd_p;
+		bool sleeped = false;
+
+		uint8_t buttonPins[] = {37, 38, 39};
+		Button *button = new Button(buttonPins, 3);
+
 		uint16_t colors[] = {
-		    BLACK, WHITE, RED, GREEN, BLUE,
-		    LCD::LCDBase::rgb565_conv(0, 0, 0),
-		    LCD::LCDBase::rgb565_conv(255, 255, 255),
-		    LCD::LCDBase::rgb565_conv(255, 0, 0),
-		    LCD::LCDBase::rgb565_conv(0, 255, 0),
-		    LCD::LCDBase::rgb565_conv(0, 0, 255),
+		    BLACK, WHITE, RED, GREEN, BLUE, (uint16_t)~RED, (uint16_t)~GREEN, (uint16_t)~BLUE,
 		    BLACK};
-		size_t n	 = 10;
+		size_t n	 = 8;
 		uint16_t i = 0;
+
+		int64_t current = esp_timer_get_time();
 		while (true) {
 			// Core1はWatch Dog Timerを介入させるためにDelay挿入
-			vTaskDelay(3000 / portTICK_PERIOD_MS);
+			vTaskDelay(1);
 
-			_i("Change %x", colors[i]);
-			lcd->clear(colors[i]);
-			lcd->drawString(20, 30, ~colors[i], "Hello, world");
-			lcd->swap();
+			button->check(nullptr, [&](uint8_t pin) {
+				switch (pin) {
+					case 37:
+						if (sleeped) {
+							sleeped = !sleeped;
+							lcd->wakeup(true);
+						}
+						break;
+					case 39:
+						if (!sleeped) {
+							sleeped = !sleeped;
+							lcd->sleep();
+						}
+						break;
+				}
+			});
 
-			if (i++ >= n) i = 0;
+			int64_t now = esp_timer_get_time();
+
+			if (now - current > 3000000) {
+				current	  = now;
+				uint16_t bg = ~colors[i];
+
+				lcd->clear(colors[i]);
+				lcd->drawString(20, 30, bg, "Hello, world");
+				if (!sleeped) lcd->update();
+
+				if (i++ >= n) i = 0;
+			}
 		}
-	},
-					    "BlinkLCD", 4096, lcd, 1, NULL, 1);
+	}, "BlinkLCD", 8192, lcd, 1, NULL, 1);
 }

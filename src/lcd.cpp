@@ -13,9 +13,9 @@ using namespace LCD;
 static const int SPI_Command_Mode = 0;
 static const int SPI_Data_Mode    = 1;
 //static const int SPI_Frequency = SPI_MASTER_FREQ_20M;
-////static const int SPI_Frequency = SPI_MASTER_FREQ_26M;
+//static const int SPI_Frequency = SPI_MASTER_FREQ_26M;
 static const int SPI_Frequency = SPI_MASTER_FREQ_40M;
-////static const int SPI_Frequency = SPI_MASTER_FREQ_80M;
+//static const int SPI_Frequency = SPI_MASTER_FREQ_80M;
 
 Font::FontBase *LCDBase::defaultFont = nullptr;
 
@@ -28,11 +28,8 @@ LCDBase::LCDBase(Parameter *params) {
 	this->rect = params->rect;
 
 	this->pixelCount = rect.width * rect.height;
-	this->size	  = pixelCount * sizeof(uint16_t);
 
-	fore = (uint16_t *)malloc(size);
-	back = (uint16_t *)malloc(size);
-	ESP_LOGI(TAG, "fore: %p, back: %p", fore, back);
+	buffer = (uint16_t *)malloc(pixelCount * sizeof(uint16_t));
 
 	gpio_pad_select_gpio(gpio.cs);
 	gpio_set_direction(gpio.cs, GPIO_MODE_OUTPUT);
@@ -82,19 +79,53 @@ LCDBase::LCDBase(Parameter *params) {
 }
 
 LCDBase::~LCDBase() {
-	free(fore);
-	free(back);
+	free(buffer);
 }
 
 void LCDBase::clear(uint16_t color) {
-	for (int i = 0; i < pixelCount; i++) {
-		fore[i] = color;
-	}
+	for (int i = 0; i < pixelCount; i++) buffer[i] = color;
 }
 
-void LCDBase::swap() {
-	drawPixelsInitialize();
-	spi_write_large_data(size, (const uint8_t *)fore);
+uint16_t *LCDBase::getBuffer() { return buffer; }
+
+void LCDBase::update(uint16_t y, uint16_t height) {
+	height = height ? height : rect.height - y;
+	if (y + height > rect.height) height = rect.height - y;
+	drawPixelsInitialize(y, height);
+	spi_write_large_data((height * rect.width) / 2, (const uint32_t *)(buffer + y * rect.width));
+	return;
+
+	/* レジスタ直操作 Do not work
+	gpio_set_level(gpio.dc, SPI_Data_Mode);
+
+	const int SPI_NUM	 = 2;
+	uint32_t repeat	 = pixelCount / 2;
+	const uint32_t *data = buffer;
+
+	if (repeat > 15) {
+		SET_PERI_REG_BITS(SPI_MOSI_DLEN_REG(SPI_NUM), SPI_USR_MOSI_DBITLEN, 255, SPI_USR_MOSI_DBITLEN_S);
+
+		while (repeat > 15) {
+			while (READ_PERI_REG(SPI_CMD_REG(SPI_NUM)) & SPI_USR) continue;
+			for (uint32_t i = 0; i < 16; i++) {
+				WRITE_PERI_REG((SPI_W0_REG(SPI_NUM) + (i << 2)), *data++);
+			}
+			SET_PERI_REG_MASK(SPI_CMD_REG(SPI_NUM), SPI_USR);
+			repeat -= 16;
+		}
+		while (READ_PERI_REG(SPI_CMD_REG(SPI_NUM)) & SPI_USR) continue;
+	}
+
+	if (repeat) {
+		repeat = (repeat << 4) - 1;
+		SET_PERI_REG_BITS(SPI_MOSI_DLEN_REG(SPI_NUM), SPI_USR_MOSI_DBITLEN, repeat, SPI_USR_MOSI_DBITLEN_S);
+		for (uint32_t i = 0; i < 16; i++) {
+			WRITE_PERI_REG((SPI_W0_REG(SPI_NUM) + (i << 2)), *data++);
+		}
+		SET_PERI_REG_MASK(SPI_CMD_REG(SPI_NUM), SPI_USR);
+		while (READ_PERI_REG(SPI_CMD_REG(SPI_NUM)) & SPI_USR) continue;
+	}
+*/
 }
 
 uint16_t LCDBase::rgb565_conv(uint8_t r, uint8_t g, uint8_t b) {
@@ -129,18 +160,28 @@ void LCDBase::spi_write_bytes(const size_t *dataLengthArray, const uint8_t *data
 	} while (*dataLengthArray > 0);
 }
 
-void LCDBase::spi_write_large_data(size_t length, const uint8_t *data) {
+void LCDBase::spi_write_command(const size_t length, const uint8_t *data) {
+	spi_transaction_t transaction;
+	memset(&transaction, 0, sizeof(spi_transaction_t));
+	transaction.length	  = length * 8;
+	transaction.tx_buffer = data;
+
+	gpio_set_level(gpio.dc, SPI_Command_Mode);
+	spi_device_transmit(this->spi, &transaction);
+}
+
+void LCDBase::spi_write_large_data(size_t length, const uint32_t *data) {
 	spi_transaction_t transaction;
 
 	memset(&transaction, 0, sizeof(spi_transaction_t));
 
 	gpio_set_level(gpio.dc, SPI_Data_Mode);
 
-	const size_t max = 256;
+	const size_t max = 512;
 	while (length > 0) {
 		size_t p			  = (length > max ? max : length);
 		transaction.tx_buffer = data;
-		transaction.length	  = p * 8;
+		transaction.length	  = p * 32;
 
 		spi_device_transmit(spi, &transaction);
 
@@ -150,5 +191,5 @@ void LCDBase::spi_write_large_data(size_t length, const uint8_t *data) {
 }
 
 void LCDBase::drawString(uint16_t x, uint16_t y, uint16_t color, const char *text, Font::FontBase *font) {
-	font->drawString(&rect, x, y, color, fore, text);
+	font->drawString(&rect, x, y, color, buffer, text);
 }
