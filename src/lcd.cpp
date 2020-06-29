@@ -25,11 +25,29 @@ LCDBase::LCDBase(Parameter *params) {
 	esp_err_t ret;
 
 	this->gpio = params->gpio;
-	this->rect = params->rect;
 
-	this->pixelCount = rect.width * rect.height;
+	uint32_t pixels = params->rect.width * params->rect.height;
 
-	buffer = (uint16_t *)malloc(pixelCount * sizeof(uint16_t));
+	buffer = (uint16_t *)heap_caps_malloc(pixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+	if (!buffer) {
+		bool horizon = true;
+
+		while (!(buffer = (uint16_t *)malloc(pixels * sizeof(uint16_t)))) {
+			if (horizon)
+				params->rect.width /= 2;
+			else
+				params->rect.height /= 2;
+
+			horizon = !horizon;
+			if (!(pixels = params->rect.width * params->rect.height)) {
+				ESP_LOGI(TAG, "Cannot allocate frame buffer: %d", pixels);
+				abort();
+			}
+		}
+	}
+
+	this->rect	  = params->rect;
+	this->pixelCount = pixels;
 
 	gpio_pad_select_gpio(gpio.cs);
 	gpio_set_direction(gpio.cs, GPIO_MODE_OUTPUT);
