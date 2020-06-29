@@ -22,3 +22,12 @@ void app_main() {
 }
 
 ```
+
+
+# PSRAMをフレームばふぁーに使う
+ESP32
+
+pio run -t menuconfig 
+
+Component Config > ESP32-specific > Support for external, SPI-connected RAM
+をチェック
