@@ -72,7 +72,7 @@ LCDBase::LCDBase(Parameter *params) {
 	}
 
 	// initialize SPI
-
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 	spi_bus_config_t buscfg = {
 	    .mosi_io_num   = gpio.mosi,
 	    .miso_io_num   = -1,
