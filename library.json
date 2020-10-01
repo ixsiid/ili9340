@@ -1,0 +1,22 @@
+{
+	"name": "M5Stack ILI9340 Driver",
+	"keywords": "esp32, MCP3426, espidf, M5Stack",
+	"description": "ILI934x",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/ixsiid/ili9340.git"
+	},
+	"authors": [
+		{
+			"name": "KIM Talchi",
+			"email": "ixsiid@halzion.net",
+			"url": "https://halzion.net",
+			"maintainer": true
+		}
+	],
+	"version": "1.0.0",
+	"frameworks": [
+		"espidf"
+	],
+	"platforms": "espressif32"
+}
